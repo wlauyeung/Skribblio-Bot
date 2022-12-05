@@ -1,8 +1,10 @@
 import puppeteer, { Page, Browser } from "puppeteer";
-import {writeFile} from "node:fs"
-import wordFile from "./words.json" assert {type: 'json'};
+import { writeFile } from "node:fs"
+import wordFile from "./unfiltered_words.json" assert {type: 'json'};
 
 class WordBank {
+  static PATH = './unfiltered_words.json';
+
   /** @type {Map<String, Number>} */
   #words
 
@@ -32,7 +34,7 @@ class WordBank {
 
   save() {
     return new Promise((resolve, reject) => {
-      writeFile('./words.json', JSON.stringify(this.#words), (err) => {
+      writeFile(WordBank.PATH, JSON.stringify(this.#words), (err) => {
         console.error(err);
         reject(err)
       });

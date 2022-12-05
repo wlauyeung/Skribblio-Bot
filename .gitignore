@@ -1,2 +1,5 @@
 /node_modules
 package-lock.json
+analysis.js
+old_words.json
+.DS_Store
