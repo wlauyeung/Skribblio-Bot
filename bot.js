@@ -4,12 +4,14 @@ import wordFile from "./unfiltered_words.json" assert {type: 'json'};
 
 class WordBank {
   static PATH = './unfiltered_words.json';
+  static SAVE_TIMER = 5 * 60 * 1000; // 5 mins
 
   /** @type {Map<String, Number>} */
   #words
 
   constructor() {
-    this.#words = wordFile;
+    this.#words = (wordFile.length !== 0) ? wordFile : {};
+    setInterval((wb=this) => {wb.save()}, WordBank.SAVE_TIMER);
   }
 
   /**
@@ -33,16 +35,16 @@ class WordBank {
   }
 
   save() {
-    return new Promise((resolve, reject) => {
-      writeFile(WordBank.PATH, JSON.stringify(this.#words), (err) => {
-        console.error(err);
-        reject(err)
-      });
-      resolve();
+    writeFile(WordBank.PATH, JSON.stringify(this.words), (err) => {
+      console.error(err);
     });
   }
 
   toString() {
+    return this.#words;
+  }
+
+  get words() {
     return this.#words;
   }
 }
@@ -279,7 +281,6 @@ class Game {
       opponant = this.opposite();
       if (this.#round === Game.ROUNDS * 2) {
         this.log('Game ended. Restarting...');
-        this.#wordBank.save();
         this.#round = 0;
         await this.#p1.wait(Game.RESTART_TIMER);
         this.log("Starting a new game...");
@@ -325,14 +326,24 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
+  const numGames = 1;
   while(true) {
     try {
       console.log("Closing pages and starting a new game...");
       const pages = await browser.pages();
       for (const page of pages) await page.close();
-      const game = new Game(wb);
-      await game.init(browser);
-      await game.run();
+      const games = [];
+
+      for (let i = 0; i < numGames; i++) {
+        games[i] = new Game(wb);
+        await games[i].init(browser);
+      }
+
+      for (let i = 0; i < numGames - 1; i++) {
+        games[i].run();
+      }
+
+      await games[games.length - 1].run();
     } catch (e) {
       console.error(e);
     }
