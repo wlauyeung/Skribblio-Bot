@@ -22,6 +22,7 @@ class WordBank {
    * @param {String} word The word to be added
    */
   addWord(word, numplayers, correctGusses) {
+    if (numplayers < 1 || correctGusses < 0 || numplayers < correctGusses) return;
     if (this.#words[word] === undefined) {
       this.#words[word] = {
         appearance: 0,
