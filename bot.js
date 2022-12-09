@@ -6,7 +6,7 @@ const config = { attributes: true, childList: true, subtree: true };
 
 class WordBank {
   static PATH = './words_picked.json';
-  static SAVE_TIMER = 1 * 60 * 1000; // 5 mins
+  static SAVE_TIMER = 10000; // 5 mins
 
   /** @type {Map<String, Number>} */
   #words
@@ -21,11 +21,19 @@ class WordBank {
    * increase its count.
    * @param {String} word The word to be added
    */
-  addWord(word) {
+  addWord(word, numplayers, correctGusses) {
     if (this.#words[word] === undefined) {
-      this.#words[word] = 0;
+      this.#words[word] = {
+        appearance: 0,
+        playersEncounterd: 0,
+        correctGusses: 0
+      }
     }
-    this.#words[word]++;
+    this.#words[word] = {
+      appearance: this.#words[word].appearance + 1,
+      playersEncounterd: this.#words[word].playersEncounterd + numplayers,
+      correctGusses: this.#words[word].correctGusses + correctGusses
+    }
   }
 
   /**
@@ -67,12 +75,18 @@ class Player {
   #name;
   /** @type {String} */
   #oldWord;
+  /** @type {Number} */
+  #playerCount;
+  /** @type {Number} */
+  #correctGuesses;
 
   constructor(name) {
     this.#page = null;
     this.#loaded = false;
     this.#name = name;
     this.#oldWord = '';
+    this.#playerCount = 0;
+    this.#correctGuesses = 0;
   }
   
   /**
@@ -151,8 +165,15 @@ class Player {
         }
       }
       currentWord = await (await (await this.#page.$(sel)).getProperty(attr)).jsonValue();
+      if (currentWord === this.#oldWord) {
+        this.#correctGuesses = (await this.#page.$$('.players-list > .guessed')).length;
+      }
     }
     if (timer > timeout) throw new Error('timedout from waiting for answer');
+    this.#playerCount = (await this.#page.$$('.players-list > .player')).length - 2;
+    if (submitted) {
+      this.#correctGuesses--;
+    }
     this.#oldWord = currentWord;
     if (this.#oldWord === '') {
       await this.waitForRoundFinished();
@@ -225,6 +246,14 @@ class Player {
     return this.#oldWord;
   }
 
+  get playerCount() {
+    return this.#playerCount;
+  }
+
+  get correctGusses() {
+    return this.#correctGuesses;
+  }
+
   get name() {
     return this.#name;
   }
@@ -268,7 +297,7 @@ class Game {
       this.log('Waiting for the round to end');
       await this.#p1.waitForRoundFinished();
       this.log('Adding a new word');
-      this.#wordBank.addWord(this.#p1.getWord());
+      this.#wordBank.addWord(this.#p1.getWord(), this.#p1.playerCount, this.#p1.correctGusses);
     }
   }
 
@@ -290,7 +319,7 @@ class Game {
 }
 
 (async () => {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({headless: false});
   const wb = new WordBank();
   const numGames = 1;
   while(true) {
