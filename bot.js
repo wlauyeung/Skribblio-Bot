@@ -1,10 +1,12 @@
 import puppeteer, { Page, Browser } from "puppeteer";
 import { writeFile } from "node:fs"
-import wordFile from "./unfiltered_words.json" assert {type: 'json'};
+import wordFile from "./words_picked.json" assert {type: 'json'};
+import sortedWords from "./words.json" assert {type: 'json'};
+const config = { attributes: true, childList: true, subtree: true };
 
 class WordBank {
-  static PATH = './unfiltered_words.json';
-  static SAVE_TIMER = 5 * 60 * 1000; // 5 mins
+  static PATH = './words_picked.json';
+  static SAVE_TIMER = 1 * 60 * 1000; // 5 mins
 
   /** @type {Map<String, Number>} */
   #words
@@ -61,22 +63,16 @@ class Player {
   #loaded;
   /** @type {Page} */
   #page;
-  /** @type {Boolean} */
-  #inRoom;
-  /** @type {Boolean} */
-  #leader;
   /** @type {String} */
   #name;
-  /** @type {String[]} */
-  #oldWords;
+  /** @type {String} */
+  #oldWord;
 
   constructor(name) {
     this.#page = null;
-    this.#inRoom = false;
     this.#loaded = false;
-    this.#leader = false;
     this.#name = name;
-    this.#oldWords = ['\'\'', '\'\'', '\'\''];
+    this.#oldWord = '';
   }
   
   /**
@@ -86,51 +82,33 @@ class Player {
   async init(browser) {
     this.#page = await browser.newPage();
     await this.#page.setViewport({
-      width: 1920,
-      height: 1080,
+      width: 1280,
+      height: 720,
       deviceScaleFactor: 1,
     });
     this.#loaded = true;
   }
 
   /**
-   * Starts a new private game from the home page and returns
-   * the URL of the room.
-   * @returns {String} The URL of the private room
-   */
-   async createRoom() {
-    if (!this.#loaded) return;
-    await this.#page.goto('https://skribbl.io', {waitUntil: 'networkidle2'});
-    await this.#page.waitForSelector(Player.CREATE_BTN_SEL);
-    await this.#page.click(Player.CREATE_BTN_SEL);
-    await this.wait(2000);
-    const node = await this.#page.$(Player.INV_URL_SEL);
-    this.#inRoom = true;
-    this.#leader = true;
-    await this.selectRounds(Game.ROUNDS);
-    return await (await node.getProperty('value')).jsonValue();
-  }
-
-  /**
    * Joins an existing private game.
-   * @param {String} roomURL The URL of the private room
    */
-  async joinGame(roomURL) {
-    if (!this.#inRoom && this.#loaded) {
-      await this.#page.goto(roomURL, {waitUntil: 'networkidle2'});
-      await this.#page.waitForSelector(Player.PLAY_BTN_SEL);
-      await this.#page.click(Player.PLAY_BTN_SEL);
-      await this.wait(2000);
-      this.#inRoom = true;
-    }
+  async joinGame() {
+    await this.#page.goto('https://skribbl.io', {waitUntil: 'networkidle2'});
+    await this.#page.waitForSelector(Player.PLAY_BTN_SEL);
+    const playBtn = await this.#page.$(Player.PLAY_BTN_SEL);
+    await playBtn.click();
+    await this.wait(2000);
   }
 
   /**
-   * Starts the game if the player is a leader of a room.
+   * Sends the word that the other player picked.
+   * @param {String} word The choice to be sent
    */
-  async startGame() {
-    if (!this.#leader) return;
-    await this.#page.click(Player.START_BTN_SEL);
+  async submitWord(word) {
+    const chat = await this.#page.$(Player.CHAT_SEL);
+    await this.#page.$eval(Player.CHAT_SEL, (e, w) => e.setAttribute('value', w), word);
+    await this.#page.focus(Player.CHAT_SEL);
+    await this.#page.keyboard.press('Enter');
   }
   
   /**
@@ -142,68 +120,94 @@ class Player {
   }
 
   /**
-   * This player's turn. Records the choices and pick a random word to draw.
-   * @return {[String, String[]]} The player's choice, words given
+   * Idles until a round is finished and the answer is given.
    */
-  async chooseWord() {
-    if (!this.#inRoom) return ['', []];
-    const choice = Math.floor(Math.random() * 3);
-    const wordElems = await this.#page.$$('.words > .word');
-    for (let i = 0; i < wordElems.length; i++) {
-      this.#oldWords[i] = await (await wordElems[i].getProperty('textContent')).jsonValue();
-    }
-    await wordElems[choice].click();
-    return [this.#oldWords[choice], this.#oldWords];
-  }
-
-  /**
-   * Sends the word that the other player picked.
-   * @param {String} word The choice to be sent
-   */
-  async submitWord(word) {
-    if (!this.#inRoom) return;
-    const chat = await this.#page.$(Player.CHAT_SEL);
-    await this.#page.$eval(Player.CHAT_SEL, (e, w) => e.setAttribute('value', w), word);
-    await this.#page.focus(Player.CHAT_SEL);
-    await this.#page.keyboard.press('Enter');
-  }
-
-  /**
-   * Change the number of rounds each game has.
-   * @param {Number} rounds Number of desired rounds
-   */
-  async selectRounds(rounds) {
-    if (!this.#leader) return;
-    const sel = await this.#page.$('#item-settings-rounds');
-    await sel.select(`${rounds}`);
-  }
-
-  /**
-   * Idles until new choices are given.
-   */
-  async waitForChoicesGiven() {
-    const sel = '.words > .word';
+  async waitForRoundFinished() {
+    const sel = '.reveal > p > span:last-child';
     const attr = 'textContent';
-    const timeout = 30000;
+    const timeout = 85000; // 85 seconds
     let timer = 0;
+    let clue = '';
+    let submitted = false;
     await this.#page.waitForSelector(sel);
     let currentWord = await (await (await this.#page.$(sel)).getProperty(attr)).jsonValue();
-    while (currentWord === this.#oldWords[0] && timer <= timeout) {
+    while (currentWord === this.#oldWord && timer <= timeout) {
       await this.wait(500);
       timer += 500;
+      if (timer % 2000 === 0) {
+        let newClue = await this.unwrapClue();
+        if (clue !== newClue && !submitted) {
+          const solutions = this.findSolutions(newClue);
+          if (solutions.length > 0 && solutions.length <= 7) {
+            new Promise(async (resolve, reject) => {
+              for (const key of Object.keys(solutions)) {
+                await this.submitWord(solutions[key].word);
+                await this.wait(1000);
+              }
+              resolve();
+            });
+            submitted = true;
+          }
+        }
+      }
       currentWord = await (await (await this.#page.$(sel)).getProperty(attr)).jsonValue();
     }
-    if (timer > timeout) throw new Error('timedout from waiting for new choices');
+    if (timer > timeout) throw new Error('timedout from waiting for answer');
+    this.#oldWord = currentWord;
+    if (this.#oldWord === '') {
+      await this.waitForRoundFinished();
+    }
     await this.wait(500);
   }
 
   /**
-   * Idles until a new word is picked by the opponant.
+   * Turns a DOM node that contains the hint into a string
+   * that is interruptable by the program.
+   * @returns {String} A clue interruptable by findSolutions()
    */
-    async waitForWordPicked() {
-    const code = `document.getElementById('game-word').firstChild.textContent === "GUESS THIS"`;
-    await this.#page.waitForFunction(code);
-    await this.wait(500);
+  async unwrapClue() {
+    const hints = await this.#page.$$('.hints > div > .hint');
+    let clue = '';
+    for (const hint of hints) {
+      clue += await (await hint.getProperty('textContent')).jsonValue();
+    }
+    return clue;
+  }
+
+  /**
+   * Finds a list of pontential answers by filtering out wrong guesses with a clue.
+   * @param {String} clue 
+   * @returns {String[]} A list of potential answers
+   */
+  findSolutions(clue) {
+    const numWords = clue.split(' ').length;
+    const lens = clue.split(' ').map(word => word.length);
+    clue = clue.replaceAll(' ', '').replaceAll('-', '').toLowerCase();
+    if (sortedWords[numWords] !== undefined && sortedWords[numWords][clue.length] !== undefined) {
+      let guesses = sortedWords[numWords][clue.length];
+      let letterPos = 0;
+
+      if (numWords > 1) {
+        guesses = guesses.filter(guess => guess.lens.every((e, i) => e === lens[i]));
+      }
+
+      while (clue.length !== 0) {
+        let letter = '';
+        while (clue.charAt(0) === '_') {
+          clue = clue.substring(1);
+          letterPos++;
+        }
+        letter = clue.charAt(0).toLowerCase();
+        if (letter !== '') {
+          guesses = guesses.filter((guess) => guess.letters.charAt(letterPos) === letter);
+        }
+        clue = clue.substring(1);
+        letterPos++;
+      }
+      return guesses;
+    } else {
+      return [];
+    }
   }
 
   /**
@@ -212,6 +216,13 @@ class Player {
    */
   async wait(time) {
     await new Promise(r => setTimeout(r, time));
+  }
+
+  /**
+   * Returns the word extracted by the bot this round.
+   */
+  getWord() {
+    return this.#oldWord;
   }
 
   get name() {
@@ -227,10 +238,6 @@ class Game {
   #wordBank;
   /** @type {Player} Player 1 */
   #p1
-  /** @type {Player} Player 2 */
-  #p2;
-  /** @type {Player} The current player */
-  #turn;
   /** @type {Number} */
   #round;
   /** @type {Boolean} */
@@ -238,8 +245,6 @@ class Game {
 
   constructor(wordBank) {
     this.#p1 = new Player("Player 1");
-    this.#p2 = new Player("Player 2");
-    this.#turn = this.#p2;
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = true;
@@ -251,55 +256,20 @@ class Game {
    */
   async init(browser) {
     await this.#p1.init(browser);
-    await this.#p2.init(browser);
-
-    const roomURL = await this.#p1.createRoom();
-    await this.#p2.joinGame(roomURL);
   }
 
   /**
    * Runs the recording process.
    */
   async run() {
-    let opponant = this.opposite();
-    this.log("Starting a new game...");
-    await this.#p1.startGame();
-
     while(true) {
-      this.log(`${this.#turn.name} is waiting for choices to be given`)
-      await this.#turn.waitForChoicesGiven();
-      this.log(`${this.#turn.name} is choosing a word`)
-      const result = await this.#turn.chooseWord();
-      this.log(`${this.#turn.name} picked the word ${result[0]} among the choices of ${result[1]}`);
-      result[1].forEach(w => {
-        this.#wordBank.addWord(w);
-      });
-      await opponant.waitForWordPicked();
-      await opponant.submitWord(result[0]);
-      this.log(`${opponant.name} submitted the word ${result[0]}`);
-      this.#turn = opponant;
-      opponant = this.opposite();
-      if (this.#round === Game.ROUNDS * 2) {
-        this.log('Game ended. Restarting...');
-        this.#round = 0;
-        await this.#p1.wait(Game.RESTART_TIMER);
-        this.log("Starting a new game...");
-        await this.#p1.startGame();
-      }
-      if (this.#round % 2 == 0) {
-        this.log(`Moving on to round ${(this.#round / 2) + 1}`);
-      }
-      this.#round++;
-      this.log(`==========================================`);
+      this.log("Joining a new game...");
+      await this.#p1.joinGame();
+      this.log('Waiting for the round to end');
+      await this.#p1.waitForRoundFinished();
+      this.log('Adding a new word');
+      this.#wordBank.addWord(this.#p1.getWord());
     }
-  }
-
-  /**
-   * Returns the guessing player.
-   * @returns {Player} The gussing player
-   */
-  opposite() {
-    return (this.#turn === this.#p1) ? this.#p2 : this.#p1;
   }
 
   /**
@@ -316,10 +286,6 @@ class Game {
 
   get p1() {
     return this.#p1;
-  }
-
-  get p2() {
-    return this.#p2;
   }
 }
 
