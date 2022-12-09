@@ -246,6 +246,10 @@ class Player {
     return this.#oldWord;
   }
 
+  async kill() {
+    await this.#page.close();
+  }
+
   get playerCount() {
     return this.#playerCount;
   }
@@ -266,17 +270,20 @@ class Game {
   /** @type {WordBank} */
   #wordBank;
   /** @type {Player} Player 1 */
-  #p1
+  #p1;
   /** @type {Number} */
   #round;
   /** @type {Boolean} */
-  #debug
+  #debug;
+  /** @type {String} */
+  #name;
 
-  constructor(wordBank) {
+  constructor(wordBank, name) {
     this.#p1 = new Player("Player 1");
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = true;
+    this.#name = name;
   }
 
   /**
@@ -292,11 +299,11 @@ class Game {
    */
   async run() {
     while(true) {
-      this.log("Joining a new game...");
+      this.log(`${this.#name}: Joining a new game...`);
       await this.#p1.joinGame();
-      this.log('Waiting for the round to end');
+      this.log(`${this.#name}: Waiting for the round to end`);
       await this.#p1.waitForRoundFinished();
-      this.log('Adding a new word');
+      this.log(`${this.#name}: Adding a new word`);
       this.#wordBank.addWord(this.#p1.getWord(), this.#p1.playerCount, this.#p1.correctGusses);
     }
   }
@@ -321,26 +328,20 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
-  const numGames = 1;
-  while(true) {
-    try {
-      console.log("Closing pages and starting a new game...");
-      const pages = await browser.pages();
-      for (const page of pages) await page.close();
-      const games = [];
+  const numGames = 3;
+  const restart = async (game, i) => {
+    game.p1.kill();
+    game = new Game(wb, `Bot ${i}`);
+    await game.init(browser);
+    game.run().catch(err => restart(game, i));
+  }
+  const pages = await browser.pages();
+  for (const page of pages) await page.close();
 
-      for (let i = 0; i < numGames; i++) {
-        games[i] = new Game(wb);
-        await games[i].init(browser);
-      }
-
-      for (let i = 0; i < numGames - 1; i++) {
-        games[i].run();
-      }
-
-      await games[games.length - 1].run();
-    } catch (e) {
-      console.error(e);
-    }
+  for (let i = 0; i < numGames; i++) {
+    const game = new Game(wb, `Bot ${i}`);
+    await game.init(browser);
+    game.run().catch(err => restart(game, i));
+    await game.p1.wait(10000);
   }
 })();
