@@ -6,7 +6,7 @@ const config = { attributes: true, childList: true, subtree: true };
 
 class WordBank {
   static PATH = './words_picked.json';
-  static SAVE_TIMER = 10000; // 5 mins
+  static SAVE_TIMER = 5 * 60 * 1000; // 5 mins
 
   /** @type {Map<String, Number>} */
   #words
@@ -319,7 +319,7 @@ class Game {
 }
 
 (async () => {
-  const browser = await puppeteer.launch({headless: false});
+  const browser = await puppeteer.launch();
   const wb = new WordBank();
   const numGames = 1;
   while(true) {
