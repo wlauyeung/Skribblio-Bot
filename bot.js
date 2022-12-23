@@ -1,9 +1,10 @@
 import puppeteer, { Page, Browser } from "puppeteer";
-import { writeFile } from "node:fs"
-import wordFile from "./unfiltered_words.json" assert {type: 'json'};
+import { writeFile } from "node:fs";
+import config from './config.json' assert {type: 'json'};
+import wordFile from "./unsorted_words.json" assert {type: 'json'};
 
 class WordBank {
-  static PATH = './unfiltered_words.json';
+  static PATH = './unsorted_words.json';
   static SAVE_TIMER = 5 * 60 * 1000; // 5 mins
 
   /** @type {Map<String, Number>} */
@@ -242,7 +243,7 @@ class Game {
     this.#turn = this.#p2;
     this.#wordBank = wordBank;
     this.#round = 1;
-    this.#debug = true;
+    this.#debug = config.debug;
   }
 
   /**
@@ -326,7 +327,7 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
-  const numGames = 1;
+  const numGames = config.numGames;
   while(true) {
     try {
       console.log("Closing pages and starting a new game...");
