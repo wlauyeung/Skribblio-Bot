@@ -1,12 +1,11 @@
 {
   "name": "skribblio-bot",
   "version": "1.0.0",
-  "description": "Get official Skribbl.io word list automatically",
+  "description": "A bot purposed to extract the official skibbl.io word bank",
   "main": "bot.js",
   "type":"module",
   "scripts": {
-    "bot": "node bot.js",
-    "ana": "node analysis.js"
+    "start": "node bot.js"
   },
   "author": "Jacky Au Yeung",
   "license": "MIT",

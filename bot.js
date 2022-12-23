@@ -2,7 +2,7 @@ import puppeteer, { Page, Browser } from "puppeteer";
 import { writeFile } from "node:fs"
 import wordFile from "./words_picked.json" assert {type: 'json'};
 import sortedWords from "./words.json" assert {type: 'json'};
-const config = { attributes: true, childList: true, subtree: true };
+import config from "./config.json" assert {type: 'json'};
 
 class WordBank {
   static PATH = './words_picked.json';
@@ -38,21 +38,12 @@ class WordBank {
   }
 
   /**
-   * Turns the word bank into a format readable by Skribbl.io Helper.
-   * @returns {String} A format readable by Skribbl.io Helper
+   * Saves the word bank to disk.
    */
-  format() {
-
-  }
-
   save() {
     writeFile(WordBank.PATH, JSON.stringify(this.words), (err) => {
       console.error(err);
     });
-  }
-
-  toString() {
-    return this.#words;
   }
 
   get words() {
@@ -91,8 +82,8 @@ class Player {
   }
   
   /**
-   * 
-   * @param {Browser} browser 
+   * Initates the game.
+   * @param {Browser} browser The active browser
    */
   async init(browser) {
     this.#page = await browser.newPage();
@@ -204,7 +195,7 @@ class Player {
   findSolutions(clue) {
     const numWords = clue.split(' ').length;
     const lens = clue.split(' ').map(word => word.length);
-    clue = clue.replaceAll(' ', '').replaceAll('-', '').toLowerCase();
+    clue = clue.replaceAll(' ', '');
     if (sortedWords[numWords] !== undefined && sortedWords[numWords][clue.length] !== undefined) {
       let guesses = sortedWords[numWords][clue.length];
       let letterPos = 0;
@@ -219,7 +210,7 @@ class Player {
           clue = clue.substring(1);
           letterPos++;
         }
-        letter = clue.charAt(0).toLowerCase();
+        letter = clue.charAt(0);
         if (letter !== '') {
           guesses = guesses.filter((guess) => guess.letters.charAt(letterPos) === letter);
         }
@@ -247,6 +238,9 @@ class Player {
     return this.#oldWord;
   }
 
+  /**
+   * Stops the bot from running.
+   */
   async kill() {
     await this.#page.close();
   }
@@ -283,7 +277,7 @@ class Game {
     this.#p1 = new Player("Player 1");
     this.#wordBank = wordBank;
     this.#round = 1;
-    this.#debug = true;
+    this.#debug = config.debug;
     this.#name = name;
   }
 
@@ -329,7 +323,7 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
-  const numGames = 3;
+  const numGames = config.numGames;
   const restart = async (game, i) => {
     game.p1.kill();
     game = new Game(wb, `Bot ${i}`);
