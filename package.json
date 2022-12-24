@@ -5,8 +5,7 @@
   "main": "bot.js",
   "type":"module",
   "scripts": {
-    "bot": "node bot.js",
-    "ana": "node analysis.js"
+    "start": "node bot.js"
   },
   "author": "Jacky Au Yeung",
   "license": "MIT",
