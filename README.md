@@ -5,7 +5,7 @@ A bot purposed to extract the official skibbl.io word bank via participating in 
 1. Install [Node.js](https://nodejs.org/en/).
 2. Create a new directory somewhere and copy all of the files over to the new directory.
 3. Open a shell at the new directory and enter `npm install`.
-4. After the installation is completed, enter `npm run bot`.
+4. After the installation is completed, enter `npm start`.
 5. Watch the bot runs! The new words collected will be put into the `words_picked.json` file every 5 minutes by default.
 
 ## Configurations
