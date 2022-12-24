@@ -194,15 +194,13 @@ class Player {
    */
   findSolutions(clue) {
     const numWords = clue.split(' ').length;
-    const lens = clue.split(' ').map(word => word.length);
-    clue = clue.replaceAll(' ', '');
+    const lens = clue.split(/[\s-]/).map(word => word.length);
+    clue = clue.replaceAll(' ', '').replaceAll('-', '');
     if (sortedWords[numWords] !== undefined && sortedWords[numWords][clue.length] !== undefined) {
       let guesses = sortedWords[numWords][clue.length];
       let letterPos = 0;
 
-      if (numWords > 1) {
-        guesses = guesses.filter(guess => guess.lens.every((e, i) => e === lens[i]));
-      }
+      guesses = guesses.filter(guess => guess.lens.every((e, i) => e === lens[i]));
 
       while (clue.length !== 0) {
         let letter = '';
@@ -217,7 +215,7 @@ class Player {
         clue = clue.substring(1);
         letterPos++;
       }
-      return guesses;
+      return guesses
     } else {
       return [];
     }
@@ -328,7 +326,7 @@ class Game {
     game.p1.kill();
     game = new Game(wb, `Bot ${i}`);
     await game.init(browser);
-    game.run().catch(err => restart(game, i));
+    game.run().catch(err => {console.log(err); restart(game, i);});
   }
   const pages = await browser.pages();
   for (const page of pages) await page.close();
@@ -336,7 +334,7 @@ class Game {
   for (let i = 0; i < numGames; i++) {
     const game = new Game(wb, `Bot ${i}`);
     await game.init(browser);
-    game.run().catch(err => restart(game, i));
+    game.run().catch(err => { console.log(err); restart(game, i)});
     await game.p1.wait(10000);
   }
 })();
