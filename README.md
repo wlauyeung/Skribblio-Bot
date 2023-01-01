@@ -13,3 +13,4 @@ A bot purposed to extract the official skibbl.io word bank via participating in 
 | ------------- | ------------- |
 | `numGames` | Default value is 3. The number of games the bot will initiate with. Note that setting this to a big number will increase the word collection rate but will also increase memory consumption drastically, therefore it is recommended to keep this number < 10.|
 | `debug` | Default value is true. If you do not want the bot to print out what it is currectly doing, set this to false. |
+| `language` | The language the bot uses to run with. The first letter of the language must be CAPITALIZED (e.g. English, Spanish). |

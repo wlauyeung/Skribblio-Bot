@@ -71,14 +71,17 @@ class Player {
   #playerCount;
   /** @type {Number} */
   #correctGuesses;
+  /** @type {Number} */
+  #language;
 
-  constructor(name) {
+  constructor(name, language=0) {
     this.#page = null;
     this.#loaded = false;
     this.#name = name;
     this.#oldWord = '';
     this.#playerCount = 0;
     this.#correctGuesses = 0;
+    this.#language = language;
   }
   
   /**
@@ -101,6 +104,7 @@ class Player {
   async joinGame() {
     await this.#page.goto('https://skribbl.io', {waitUntil: 'networkidle2'});
     await this.#page.waitForSelector(Player.PLAY_BTN_SEL);
+    await this.changeLanguage(this.#language);
     const playBtn = await this.#page.$(Player.PLAY_BTN_SEL);
     await playBtn.click();
     await this.wait(2000);
@@ -115,6 +119,15 @@ class Player {
     await this.#page.$eval(Player.CHAT_SEL, (e, w) => e.setAttribute('value', w), word);
     await this.#page.focus(Player.CHAT_SEL);
     await this.#page.keyboard.press('Enter');
+  }
+
+  /**
+   * Changes the language.
+   * @param {Number} value The number correspoding to the language desired.
+   */
+  async changeLanguage(value) {
+    const sel = await this.#page.$('.container-name-lang > select');
+    await sel.select(`${value}`);
   }
   
   /**
@@ -140,7 +153,7 @@ class Player {
     while (currentWord === this.#oldWord && timer <= timeout) {
       await this.wait(500);
       timer += 500;
-      if (timer % 2000 === 0) {
+      if (timer % 2000 === 0 && this.#language === 0) {
         let newClue = await this.unwrapClue();
         if (clue !== newClue && !submitted) {
           const solutions = this.findSolutions(newClue);
@@ -271,8 +284,8 @@ class Game {
   /** @type {String} */
   #name;
 
-  constructor(wordBank, name) {
-    this.#p1 = new Player("Player 1");
+  constructor(wordBank, name, language=0) {
+    this.#p1 = new Player("Player 1", language);
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = config.debug;
@@ -321,18 +334,26 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
-  const numGames = config.numGames;
+  const NUMGAMES = config.numGames;
+  const LANGUAGES = {
+    'English': 0, 'German': 1, 'Bulgarian': 2, 'Czech': 3, 'Danish': 4, 'Dutch': 5, 'Finnish': 6,
+    'French': 7, 'Estonian': 8, 'Greek': 9, 'Hebrew': 10, 'Hungarian': 11, 'Italian': 12, 'Japanese': 13,
+    'Korean': 14, 'Latvian': 15, 'Macedonian': 16, 'Norwegian': 17, 'Portuguese': 18, 'Polish': 19,
+    'Romanian': 20, 'Russian': 21, 'Serbian': 22, 'Slovakian': 23, 'Spanish': 24, 'Swedish': 25,
+    'Tagalog': 26, 'Turkish': 27
+  }
+  const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
   const restart = async (game, i) => {
     game.p1.kill();
-    game = new Game(wb, `Bot ${i}`);
+    game = new Game(wb, `Bot ${i}`, language);
     await game.init(browser);
     game.run().catch(err => {console.log(err); restart(game, i);});
   }
   const pages = await browser.pages();
   for (const page of pages) await page.close();
 
-  for (let i = 0; i < numGames; i++) {
-    const game = new Game(wb, `Bot ${i}`);
+  for (let i = 0; i < NUMGAMES; i++) {
+    const game = new Game(wb, `Bot ${i}`, language);
     await game.init(browser);
     game.run().catch(err => { console.log(err); restart(game, i)});
     await game.p1.wait(10000);
