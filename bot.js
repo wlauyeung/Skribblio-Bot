@@ -18,7 +18,7 @@ class WordBank {
   /**
    * Add a word to the word bank. If it has appeared before
    * increase its count.
-   * @param {String} word The word to be added
+   * @param {String} word The word to be added.
    */
   addWord(word) {
     if (this.#words[word] === undefined) {
@@ -27,22 +27,10 @@ class WordBank {
     this.#words[word]++;
   }
 
-  /**
-   * Turns the word bank into a format readable by Skribbl.io Helper.
-   * @returns {String} A format readable by Skribbl.io Helper
-   */
-  format() {
-
-  }
-
   save() {
     writeFile(WordBank.PATH, JSON.stringify(this.words), (err) => {
       console.error(err);
     });
-  }
-
-  toString() {
-    return this.#words;
   }
 
   get words() {
@@ -70,18 +58,20 @@ class Player {
   #name;
   /** @type {String[]} */
   #oldWords;
+  /** @type {Number} */
+  #language;
 
-  constructor(name) {
+  constructor(name, language=0) {
     this.#page = null;
     this.#inRoom = false;
     this.#loaded = false;
     this.#leader = false;
     this.#name = name;
     this.#oldWords = ['\'\'', '\'\'', '\'\''];
+    this.#language = language;
   }
   
   /**
-   * 
    * @param {Browser} browser 
    */
   async init(browser) {
@@ -97,7 +87,7 @@ class Player {
   /**
    * Starts a new private game from the home page and returns
    * the URL of the room.
-   * @returns {String} The URL of the private room
+   * @returns {String} The URL of the private room.
    */
    async createRoom() {
     if (!this.#loaded) return;
@@ -109,12 +99,13 @@ class Player {
     this.#inRoom = true;
     this.#leader = true;
     await this.selectRounds(Game.ROUNDS);
+    await this.changeLanguage(this.#language);
     return await (await node.getProperty('value')).jsonValue();
   }
 
   /**
    * Joins an existing private game.
-   * @param {String} roomURL The URL of the private room
+   * @param {String} roomURL The URL of the private room.
    */
   async joinGame(roomURL) {
     if (!this.#inRoom && this.#loaded) {
@@ -144,7 +135,7 @@ class Player {
 
   /**
    * This player's turn. Records the choices and pick a random word to draw.
-   * @return {[String, String[]]} The player's choice, words given
+   * @return {[String, String[]]} The player's choice, words given.
    */
   async chooseWord() {
     if (!this.#inRoom) return ['', []];
@@ -158,8 +149,18 @@ class Player {
   }
 
   /**
+   * Changes the language.
+   * @param {Number} value The number correspoding to the language desired.
+   */
+    async changeLanguage(value) {
+      if (!this.#leader) return;
+      const sel = await this.#page.$('#item-settings-language');
+      await sel.select(`${value}`);
+    }
+
+  /**
    * Sends the word that the other player picked.
-   * @param {String} word The choice to be sent
+   * @param {String} word The choice to be sent.
    */
   async submitWord(word) {
     if (!this.#inRoom) return;
@@ -171,7 +172,7 @@ class Player {
 
   /**
    * Change the number of rounds each game has.
-   * @param {Number} rounds Number of desired rounds
+   * @param {Number} rounds Number of desired rounds.
    */
   async selectRounds(rounds) {
     if (!this.#leader) return;
@@ -209,7 +210,7 @@ class Player {
 
   /**
    * Idles for a specific time in miliseconds.
-   * @param {Number} time Time is miliseconds 
+   * @param {Number} time Time is miliseconds.
    */
   async wait(time) {
     await new Promise(r => setTimeout(r, time));
@@ -237,13 +238,13 @@ class Game {
   /** @type {Boolean} */
   #debug
 
-  constructor(wordBank) {
-    this.#p1 = new Player("Player 1");
-    this.#p2 = new Player("Player 2");
-    this.#turn = this.#p2;
+  constructor(wordBank, language=0) {
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = config.debug;
+    this.#p1 = new Player("Player 1", language);
+    this.#p2 = new Player("Player 2", language);
+    this.#turn = this.#p2;
   }
 
   /**
@@ -297,7 +298,7 @@ class Game {
 
   /**
    * Returns the guessing player.
-   * @returns {Player} The gussing player
+   * @returns {Player} The gussing player.
    */
   opposite() {
     return (this.#turn === this.#p1) ? this.#p2 : this.#p1;
@@ -327,20 +328,28 @@ class Game {
 (async () => {
   const browser = await puppeteer.launch();
   const wb = new WordBank();
-  const numGames = config.numGames;
+  const NUMGAMES = config.numGames;
+  const LANGUAGES = {
+    'English': 0, 'German': 1, 'Bulgarian': 2, 'Czech': 3, 'Danish': 4, 'Dutch': 5, 'Finnish': 6,
+    'French': 7, 'Estonian': 8, 'Greek': 9, 'Hebrew': 10, 'Hungarian': 11, 'Italian': 12, 'Japanese': 13,
+    'Korean': 14, 'Latvian': 15, 'Macedonian': 16, 'Norwegian': 17, 'Portuguese': 18, 'Polish': 19,
+    'Romanian': 20, 'Russian': 21, 'Serbian': 22, 'Slovakian': 23, 'Spanish': 24, 'Swedish': 25,
+    'Tagalog': 26, 'Turkish': 27
+  }
+
   while(true) {
     try {
       console.log("Closing pages and starting a new game...");
       const pages = await browser.pages();
       for (const page of pages) await page.close();
       const games = [];
-
-      for (let i = 0; i < numGames; i++) {
-        games[i] = new Game(wb);
+      const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
+      for (let i = 0; i < NUMGAMES; i++) {
+        games[i] = new Game(wb, language);
         await games[i].init(browser);
       }
 
-      for (let i = 0; i < numGames - 1; i++) {
+      for (let i = 0; i < NUMGAMES - 1; i++) {
         games[i].run();
       }
 
