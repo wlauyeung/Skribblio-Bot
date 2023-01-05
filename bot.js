@@ -256,6 +256,7 @@ class Game {
     await this.#p2.init(browser);
 
     const roomURL = await this.#p1.createRoom();
+    await this.#p1.wait(2000);
     await this.#p2.joinGame(roomURL);
   }
 
