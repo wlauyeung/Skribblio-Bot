@@ -8,6 +8,8 @@ A bot purposed to extract the official skibbl.io word bank via participating in 
 4. After the installation is completed, enter `npm start`.
 5. Watch the bot runs! The new words collected will be put into the `words_picked.json` file every 5 minutes by default.
 
+**NOTE:** If you are planning to run the bot with a language other than English, please take a look at https://github.com/wlauyeung/Skribblio-Bot/issues/1. 
+
 ## Configurations
 | Option | Usage |
 | ------------- | ------------- |
