@@ -1,7 +1,7 @@
 import puppeteer, { Page, Browser } from "puppeteer";
 import { writeFile } from "node:fs";
-import config from './config.json' assert {type: 'json'};
-import wordFile from "./unsorted_words.json" assert {type: 'json'};
+import config from './config.json' with {type: 'json'};
+import wordFile from "./unsorted_words.json" with {type: 'json'};
 
 class WordBank {
   static PATH = './unsorted_words.json';
@@ -42,8 +42,8 @@ class Player {
   static CREATE_BTN_SEL = '.button-create';
   static INV_URL_SEL = '#input-invite';
   static PLAY_BTN_SEL = '.button-play';
-  static START_BTN_SEL = '#start-game';
-  static CHAT_SEL = '.chat-container > form > input';
+  static START_BTN_SEL = '#button-start-game';
+  static CHAT_SEL = '#game-chat input';
   static GAME_WORD_SEL = '#game-word';
 
   /** @type {Boolean} */

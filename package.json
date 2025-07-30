@@ -1,6 +1,6 @@
 {
   "name": "skribblio-bot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Get official Skribbl.io word list automatically",
   "main": "bot.js",
   "type":"module",
