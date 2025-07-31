@@ -90,7 +90,9 @@ class Player {
    * @returns {String} The URL of the private room.
    */
   async createRoom() {
-    if (!this.#loaded) return;
+    if (!this.#loaded) {
+      throw new Error('Player not loaded');
+    }
     await this.#page.goto('https://skribbl.io');
     await this.#page.waitForSelector(Player.CREATE_BTN_SEL);
     await this.#page.click(Player.CREATE_BTN_SEL);
@@ -162,6 +164,14 @@ class Player {
     return this.#language;
   }
 
+  get loaded() {
+    return this.#loaded;
+  }
+
+  get inRoom() {
+    return this.#inRoom;
+  }
+
   /**
    * Sends the word that the other player picked.
    * @param {String} word The choice to be sent.
@@ -224,7 +234,7 @@ class Player {
    * Stops the player and close the page.
    */
   async stop() {
-    if (!this.#page.isClosed()) {
+    if (this.#page !== null && !this.#page.isClosed()) {
       await this.#page.close();
     }
   }
@@ -254,8 +264,10 @@ class Game {
   #running
   /** @type {Browser} */
   #browser;
+  /** @type {string} */
+  #name;
 
-  constructor(wordBank, browser, language = 0) {
+  constructor(name, wordBank, browser, language = 0) {
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = config.debug;
@@ -263,6 +275,8 @@ class Game {
     this.#p2 = new Player("Player 2", language);
     this.#turn = this.#p2;
     this.#browser = browser;
+    this.#running = false;
+    this.#name = name;
   }
 
   async init() {
@@ -271,11 +285,12 @@ class Game {
       await this.#p2.init(this.#browser);
 
       const roomURL = await this.#p1.createRoom();
+
       await this.#p1.wait(2000);
       await this.#p2.joinGame(roomURL);
     } catch (e) {
       console.error("Error during initialization:", e);
-      this.reset();
+      await this.reset();
     }
   }
 
@@ -289,24 +304,37 @@ class Game {
     await this.#p2.stop();
     this.#wordBank.save();
 
+    this.#running = false;
     this.#round = 1;
     this.#p1 = new Player("Player 1", this.#p1.language);
     this.#p2 = new Player("Player 2", this.#p2.language);
     this.#turn = this.#p2;
 
     await this.init();
-    this.run();
-    this.log("Game has been reset.");
+    if (this.ready() && !this.isRunning()) {
+      this.#running = true;
+      this.run();
+      this.log("Game has been reset.");
+    }
   }
 
   /**
    * Runs the recording process.
    */
   async run() {
+    if (!this.ready()) {
+      throw new Error('Players not loaded or not in room');
+    }
+    this.#running = true;
     let opponant = this.opposite();
     this.log("Starting a new game...");
-    await this.#p1.startGame();
-    this.#running = true;
+    try {
+      await this.#p1.startGame();
+    } catch (e) {
+      console.error("Error starting the game:", e);
+      this.#running = false;
+      this.reset();
+    }
 
     while (true) {
       try {
@@ -341,7 +369,7 @@ class Game {
       }
     }
     this.#running = false;
-    this.reset();
+    await this.reset();
   }
 
   /**
@@ -365,7 +393,11 @@ class Game {
    * @param {String} message The message.
    */
   log(message) {
-    if (this.#debug) console.log(message);
+    if (this.#debug) console.log(`[${this.#name}]: ${message}`);
+  }
+
+  ready() {
+    return this.#p1.loaded && this.#p2.loaded && this.#p1.inRoom && this.#p2.inRoom;
   }
 
   get wordBank() {
@@ -399,11 +431,12 @@ class Game {
   const games = [];
   const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
   for (let i = 0; i < NUMGAMES; i++) {
-    games[i] = new Game(wb, browser, language);
+    games[i] = new Game(`Bot ${i + 1}`, wb, browser, language);
     await games[i].init();
-  }
-  for (let i = 0; i < NUMGAMES; i++) {
-    games[i].run();
+    if (games[i].ready()) {
+      games[i].run();
+    }
+    console.log(`Bot ${i + 1} initialized with language ${config.language}`);
   }
 
   let running = true;
