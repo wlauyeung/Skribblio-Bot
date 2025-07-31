@@ -12,7 +12,7 @@ class WordBank {
 
   constructor() {
     this.#words = (wordFile.length !== 0) ? wordFile : {};
-    setInterval((wb=this) => {wb.save()}, WordBank.SAVE_TIMER);
+    setInterval((wb = this) => { wb.save() }, WordBank.SAVE_TIMER);
   }
 
   /**
@@ -61,7 +61,7 @@ class Player {
   /** @type {Number} */
   #language;
 
-  constructor(name, language=0) {
+  constructor(name, language = 0) {
     this.#page = null;
     this.#inRoom = false;
     this.#loaded = false;
@@ -70,7 +70,7 @@ class Player {
     this.#oldWords = ['\'\'', '\'\'', '\'\''];
     this.#language = language;
   }
-  
+
   /**
    * @param {Browser} browser 
    */
@@ -89,9 +89,9 @@ class Player {
    * the URL of the room.
    * @returns {String} The URL of the private room.
    */
-   async createRoom() {
+  async createRoom() {
     if (!this.#loaded) return;
-    await this.#page.goto('https://skribbl.io', {waitUntil: 'networkidle2'});
+    await this.#page.goto('https://skribbl.io');
     await this.#page.waitForSelector(Player.CREATE_BTN_SEL);
     await this.#page.click(Player.CREATE_BTN_SEL);
     await this.wait(2000);
@@ -109,7 +109,7 @@ class Player {
    */
   async joinGame(roomURL) {
     if (!this.#inRoom && this.#loaded) {
-      await this.#page.goto(roomURL, {waitUntil: 'networkidle2'});
+      await this.#page.goto(roomURL);
       await this.#page.waitForSelector(Player.PLAY_BTN_SEL);
       await this.#page.click(Player.PLAY_BTN_SEL);
       await this.wait(2000);
@@ -124,13 +124,13 @@ class Player {
     if (!this.#leader) return;
     await this.#page.click(Player.START_BTN_SEL);
   }
-  
+
   /**
    * Saves the page as a pdf. For debugging only.
    */
   async printPage() {
     if (!this.#loaded) return;
-    await this.#page.pdf({path: 'page.pdf', format: 'A4'});
+    await this.#page.pdf({ path: 'page.pdf', format: 'A4' });
   }
 
   /**
@@ -152,11 +152,11 @@ class Player {
    * Changes the language.
    * @param {Number} value The number correspoding to the language desired.
    */
-    async changeLanguage(value) {
-      if (!this.#leader) return;
-      const sel = await this.#page.$('#item-settings-language');
-      await sel.select(`${value}`);
-    }
+  async changeLanguage(value) {
+    if (!this.#leader) return;
+    const sel = await this.#page.$('#item-settings-language');
+    await sel.select(`${value}`);
+  }
 
   /**
    * Sends the word that the other player picked.
@@ -202,7 +202,7 @@ class Player {
   /**
    * Idles until a new word is picked by the opponant.
    */
-    async waitForWordPicked() {
+  async waitForWordPicked() {
     const code = `document.getElementById('game-word').firstChild.textContent === "GUESS THIS"`;
     await this.#page.waitForFunction(code);
     await this.wait(500);
@@ -214,6 +214,15 @@ class Player {
    */
   async wait(time) {
     await new Promise(r => setTimeout(r, time));
+  }
+
+  /**
+   * Stops the player and close the page.
+   */
+  async stop() {
+    if (!this.#page.isClosed()) {
+      await this.#page.close();
+    }
   }
 
   get name() {
@@ -235,29 +244,50 @@ class Game {
   #turn;
   /** @type {Number} */
   #round;
-  /** @type {Boolean} */
+  /** @type {boolean} */
   #debug
+  /** @type {boolean} */
+  #running
+  /** @type {Browser} */
+  #browser;
 
-  constructor(wordBank, language=0) {
+  constructor(wordBank, browser, language = 0) {
     this.#wordBank = wordBank;
     this.#round = 1;
     this.#debug = config.debug;
     this.#p1 = new Player("Player 1", language);
     this.#p2 = new Player("Player 2", language);
     this.#turn = this.#p2;
+    this.#browser = browser;
   }
 
-  /**
-   * Setup the game.
-   * @param {Browser} browser 
-   */
-  async init(browser) {
-    await this.#p1.init(browser);
-    await this.#p2.init(browser);
+  async init() {
+    await this.#p1.init(this.#browser);
+    await this.#p2.init(this.#browser);
 
     const roomURL = await this.#p1.createRoom();
     await this.#p1.wait(2000);
     await this.#p2.joinGame(roomURL);
+  }
+
+  /**
+   * Resets the game to its initial state.
+   * This will stop the players, reset the round and reinitialize the players.
+   * The word bank will also be saved.
+   */
+  async reset() {
+    await this.#p1.stop();
+    await this.#p2.stop();
+    this.#wordBank.save();
+
+    this.#round = 1;
+    this.#p1 = new Player("Player 1");
+    this.#p2 = new Player("Player 2");
+    this.#turn = this.#p2;
+
+    await this.init();
+    this.run();
+    this.log("Game has been reset.");
   }
 
   /**
@@ -267,34 +297,50 @@ class Game {
     let opponant = this.opposite();
     this.log("Starting a new game...");
     await this.#p1.startGame();
+    this.#running = true;
 
-    while(true) {
-      this.log(`${this.#turn.name} is waiting for choices to be given`)
-      await this.#turn.waitForChoicesGiven();
-      this.log(`${this.#turn.name} is choosing a word`)
-      const result = await this.#turn.chooseWord();
-      this.log(`${this.#turn.name} picked the word ${result[0]} among the choices of ${result[1]}`);
-      result[1].forEach(w => {
-        this.#wordBank.addWord(w);
-      });
-      await opponant.waitForWordPicked();
-      await opponant.submitWord(result[0]);
-      this.log(`${opponant.name} submitted the word ${result[0]}`);
-      this.#turn = opponant;
-      opponant = this.opposite();
-      if (this.#round === Game.ROUNDS * 2) {
-        this.log('Game ended. Restarting...');
-        this.#round = 0;
-        await this.#p1.wait(Game.RESTART_TIMER);
-        this.log("Starting a new game...");
-        await this.#p1.startGame();
+    while (true) {
+      try {
+        this.log(`${this.#turn.name} is waiting for choices to be given`)
+        await this.#turn.waitForChoicesGiven();
+        this.log(`${this.#turn.name} is choosing a word`)
+        const result = await this.#turn.chooseWord();
+        this.log(`${this.#turn.name} picked the word ${result[0]} among the choices of ${result[1]}`);
+        result[1].forEach(w => {
+          this.#wordBank.addWord(w);
+        });
+        await opponant.waitForWordPicked();
+        await opponant.submitWord(result[0]);
+        this.log(`${opponant.name} submitted the word ${result[0]}`);
+        this.#turn = opponant;
+        opponant = this.opposite();
+        if (this.#round === Game.ROUNDS * 2) {
+          this.log('Game ended. Restarting...');
+          this.#round = 0;
+          await this.#p1.wait(Game.RESTART_TIMER);
+          this.log("Starting a new game...");
+          await this.#p1.startGame();
+        }
+        if (this.#round % 2 == 0) {
+          this.log(`Moving on to round ${(this.#round / 2) + 1}`);
+        }
+        this.#round++;
+        this.log(`==========================================`);
+      } catch (e) {
+        console.error(e);
+        break;
       }
-      if (this.#round % 2 == 0) {
-        this.log(`Moving on to round ${(this.#round / 2) + 1}`);
-      }
-      this.#round++;
-      this.log(`==========================================`);
     }
+    this.#running = false;
+    this.reset();
+  }
+
+  /**
+   * Checks if the game is currently running.
+   * @returns {boolean} True if the game is running, false otherwise.
+   */
+  isRunning() {
+    return this.#running;
   }
 
   /**
@@ -338,25 +384,28 @@ class Game {
     'Tagalog': 26, 'Turkish': 27
   }
 
-  while(true) {
-    try {
-      console.log("Closing pages and starting a new game...");
-      const pages = await browser.pages();
-      for (const page of pages) await page.close();
-      const games = [];
-      const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
-      for (let i = 0; i < NUMGAMES; i++) {
-        games[i] = new Game(wb, language);
-        await games[i].init(browser);
-      }
+  console.log("Closing pages and starting a new game...");
+  const pages = await browser.pages();
+  for (const page of pages) await page.close();
+  const games = [];
+  const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
+  for (let i = 0; i < NUMGAMES; i++) {
+    games[i] = new Game(wb, browser, language);
+    await games[i].init();
+  }
+  for (let i = 0; i < NUMGAMES; i++) {
+    games[i].run();
+  }
 
-      for (let i = 0; i < NUMGAMES - 1; i++) {
-        games[i].run();
+  let running = true;
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  while (running) {
+    for (let i = 0; i < NUMGAMES; i++) {
+      if (!games[i].isRunning()) {
+        running = false;
+        break;
       }
-
-      await games[games.length - 1].run();
-    } catch (e) {
-      console.error(e);
     }
+    await sleep(60000);
   }
 })();
