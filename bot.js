@@ -266,12 +266,17 @@ class Game {
   }
 
   async init() {
-    await this.#p1.init(this.#browser);
-    await this.#p2.init(this.#browser);
+    try {
+      await this.#p1.init(this.#browser);
+      await this.#p2.init(this.#browser);
 
-    const roomURL = await this.#p1.createRoom();
-    await this.#p1.wait(2000);
-    await this.#p2.joinGame(roomURL);
+      const roomURL = await this.#p1.createRoom();
+      await this.#p1.wait(2000);
+      await this.#p2.joinGame(roomURL);
+    } catch (e) {
+      console.error("Error during initialization:", e);
+      this.reset();
+    }
   }
 
   /**
