@@ -158,6 +158,10 @@ class Player {
     await sel.select(`${value}`);
   }
 
+  get language() {
+    return this.#language;
+  }
+
   /**
    * Sends the word that the other player picked.
    * @param {String} word The choice to be sent.
@@ -281,8 +285,8 @@ class Game {
     this.#wordBank.save();
 
     this.#round = 1;
-    this.#p1 = new Player("Player 1");
-    this.#p2 = new Player("Player 2");
+    this.#p1 = new Player("Player 1", this.#p1.language);
+    this.#p2 = new Player("Player 2", this.#p2.language);
     this.#turn = this.#p2;
 
     await this.init();
