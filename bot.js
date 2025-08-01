@@ -1,8 +1,7 @@
 import puppeteer, { Page, Browser } from "puppeteer";
-import { writeFile } from "node:fs";
 import config from './config.json' with {type: 'json'};
-import wordFile from "./unsorted_words.json" with {type: 'json'};
 import * as readline from "node:readline";
+import fs from "node:fs";
 
 class WordBank {
   static PATH = './unsorted_words.json';
@@ -11,8 +10,8 @@ class WordBank {
   /** @type {Map<String, Number>} */
   #words
 
-  constructor() {
-    this.#words = (wordFile.length !== 0) ? wordFile : {};
+  constructor(data = {}) {
+    this.#words = data;
     setInterval((wb = this) => { wb.save() }, WordBank.SAVE_TIMER);
   }
 
@@ -29,7 +28,7 @@ class WordBank {
   }
 
   save() {
-    writeFile(WordBank.PATH, JSON.stringify(this.words), (err) => {
+    fs.writeFile(WordBank.PATH, JSON.stringify(this.words), (err) => {
       console.error(err);
     });
   }
@@ -441,14 +440,22 @@ class Game {
       await this.#p1.wait(1000);
     }
     this.#running = false;
-    this.#p1.stop();
-    this.#p2.stop();
-    this.#wordBank.save();
+    await this.#p1.stop();
+    await this.#p2.stop();
   }
 }
 
 (async () => {
-  const wb = new WordBank();
+  const file = await fs.promises.readFile(WordBank.PATH, 'utf8');
+  if (file === '') {
+    console.log('[Skribblio Bot] No word bank found, creating a new one...');
+    await fs.promises.writeFile(WordBank.PATH, JSON.stringify({}));
+  }
+  const wordFile = JSON.parse(file);
+  if (wordFile === null || wordFile === undefined) {
+    console.error('[Skribblio Bot] Invalid word bank file. Treating as empty.');
+  }
+  const wb = new WordBank(wordFile);
   const NUMGAMES = config.numGames;
   const LANGUAGES = {
     'English': 0, 'German': 1, 'Bulgarian': 2, 'Czech': 3, 'Danish': 4, 'Dutch': 5, 'Finnish': 6,
