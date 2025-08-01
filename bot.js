@@ -2,6 +2,7 @@ import puppeteer, { Page, Browser } from "puppeteer";
 import { writeFile } from "node:fs";
 import config from './config.json' with {type: 'json'};
 import wordFile from "./unsorted_words.json" with {type: 'json'};
+import * as readline from "node:readline";
 
 class WordBank {
   static PATH = './unsorted_words.json';
@@ -266,6 +267,10 @@ class Game {
   #browser;
   /** @type {string} */
   #name;
+  /** @type {boolean} */
+  #stopping;
+  /** @type {boolean} */
+  #initialized;
 
   constructor(name, wordBank, browser, language = 0) {
     this.#wordBank = wordBank;
@@ -277,6 +282,8 @@ class Game {
     this.#browser = browser;
     this.#running = false;
     this.#name = name;
+    this.#stopping = false;
+    this.#initialized = false;
   }
 
   async init() {
@@ -288,6 +295,8 @@ class Game {
 
       await this.#p1.wait(2000);
       await this.#p2.joinGame(roomURL);
+
+      this.#initialized = true;
     } catch (e) {
       console.error("Error during initialization:", e);
       await this.reset();
@@ -309,12 +318,14 @@ class Game {
     this.#p1 = new Player("Player 1", this.#p1.language);
     this.#p2 = new Player("Player 2", this.#p2.language);
     this.#turn = this.#p2;
+    this.#stopping = false;
 
+    this.#initialized = false;
     await this.init();
     if (this.ready() && !this.isRunning()) {
       this.#running = true;
       this.run();
-      this.log("Game has been reset.");
+      this.debug("Game has been reset.");
     }
   }
 
@@ -327,7 +338,7 @@ class Game {
     }
     this.#running = true;
     let opponant = this.opposite();
-    this.log("Starting a new game...");
+    this.debug("Starting a new game...");
     try {
       await this.#p1.startGame();
     } catch (e) {
@@ -338,38 +349,42 @@ class Game {
 
     while (true) {
       try {
-        this.log(`${this.#turn.name} is waiting for choices to be given`)
+        if (this.#stopping) {
+          break;
+        }
+        this.debug(`${this.#turn.name} is waiting for choices to be given`)
         await this.#turn.waitForChoicesGiven();
-        this.log(`${this.#turn.name} is choosing a word`)
+        this.debug(`${this.#turn.name} is choosing a word`)
         const result = await this.#turn.chooseWord();
-        this.log(`${this.#turn.name} picked the word ${result[0]} among the choices of ${result[1]}`);
+        this.debug(`${this.#turn.name} picked the word ${result[0]} among the choices of ${result[1]}`);
         result[1].forEach(w => {
           this.#wordBank.addWord(w);
         });
         await opponant.waitForWordPicked();
         await opponant.submitWord(result[0]);
-        this.log(`${opponant.name} submitted the word ${result[0]}`);
+        this.debug(`${opponant.name} submitted the word ${result[0]}`);
         this.#turn = opponant;
         opponant = this.opposite();
         if (this.#round === Game.ROUNDS * 2) {
-          this.log('Game ended. Restarting...');
+          this.debug('Game ended. Restarting...');
           this.#round = 0;
           await this.#p1.wait(Game.RESTART_TIMER);
-          this.log("Starting a new game...");
+          this.debug("Starting a new game...");
           await this.#p1.startGame();
         }
         if (this.#round % 2 == 0) {
-          this.log(`Moving on to round ${(this.#round / 2) + 1}`);
+          this.debug(`Moving on to round ${(this.#round / 2) + 1}`);
         }
         this.#round++;
-        this.log(`==========================================`);
       } catch (e) {
         console.error(e);
         break;
       }
     }
     this.#running = false;
-    await this.reset();
+    if (!this.#stopping) {
+      await this.reset();
+    }
   }
 
   /**
@@ -390,10 +405,18 @@ class Game {
 
   /**
    * Prints to the console if debug mode is on.
-   * @param {String} message The message.
+   * @param {string} message The message.
+   */
+  debug(message) {
+    if (this.#debug) console.log(`[${this.#name}] Turn ${this.#round} ${message}`);
+  }
+
+  /**
+   * Logs a message to the console.
+   * @param {string} message The message.
    */
   log(message) {
-    if (this.#debug) console.log(`[${this.#name}]: ${message}`);
+    console.log(`[${this.#name}] Turn ${this.#round} ${message}`);
   }
 
   ready() {
@@ -411,10 +434,20 @@ class Game {
   get p2() {
     return this.#p2;
   }
+
+  async stop() {
+    this.#stopping = true;
+    while (!this.#initialized || this.#running) {
+      await this.#p1.wait(1000);
+    }
+    this.#running = false;
+    this.#p1.stop();
+    this.#p2.stop();
+    this.#wordBank.save();
+  }
 }
 
 (async () => {
-  const browser = await puppeteer.launch();
   const wb = new WordBank();
   const NUMGAMES = config.numGames;
   const LANGUAGES = {
@@ -424,30 +457,52 @@ class Game {
     'Romanian': 20, 'Russian': 21, 'Serbian': 22, 'Slovakian': 23, 'Spanish': 24, 'Swedish': 25,
     'Tagalog': 26, 'Turkish': 27
   }
-
-  console.log("Closing pages and starting a new game...");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true
+  });
+  const games = [];
+  const browser = await puppeteer.launch({ handleSIGINT: false });
+  const shutdown = async () => {
+    try {
+      rl.close();
+      for (let i = 0; i < games.length; i++) {
+        console.log(`[Skribblio Bot] Stopping game ${i + 1}...`);
+        await games[i].stop();
+        console.log(`[Skribblio Bot] Stopped game ${i + 1}`);
+      }
+      console.log(`[Skribblio Bot] Saving word bank...`);
+      wb.save();
+      console.log(`[Skribblio Bot] Closing browser...`);
+      if (browser.isConnected()) {
+        await browser.close();
+      }
+      console.log(`[Skribblio Bot] Shutdown complete.`);
+      process.exit(0);
+    } catch (error) {
+      console.error("[Skribblio Bot] Error stopping the bot:", error);
+      process.exit(1);
+    }
+  };
+  ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => rl.on(signal, shutdown));
+  console.log('[Skribblio Bot] Initializing...');
   const pages = await browser.pages();
   for (const page of pages) await page.close();
-  const games = [];
   const language = LANGUAGES[config.language] === undefined ? 0 : LANGUAGES[config.language];
   for (let i = 0; i < NUMGAMES; i++) {
     games[i] = new Game(`Bot ${i + 1}`, wb, browser, language);
+  }
+  rl.on('line', async (line) => {
+    if (line.trim().toLowerCase() === 'stop') {
+      shutdown();
+    }
+  });
+  for (let i = 0; i < NUMGAMES; i++) {
     await games[i].init();
     if (games[i].ready()) {
       games[i].run();
     }
-    console.log(`Bot ${i + 1} initialized with language ${config.language}`);
-  }
-
-  let running = true;
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  while (running) {
-    for (let i = 0; i < NUMGAMES; i++) {
-      if (!games[i].isRunning()) {
-        running = false;
-        break;
-      }
-    }
-    await sleep(60000);
+    console.log(`[Skribblio Bot] Bot ${i + 1} initialized with language ${config.language}`);
   }
 })();
